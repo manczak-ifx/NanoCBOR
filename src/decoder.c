@@ -616,11 +616,24 @@ static int _skip_limited(nanocbor_value_t *it, uint8_t limit)
         return NANOCBOR_ERR_RECURSION;
     }
 
+    /* Skipping one CBOR item must consume exactly one slot of `it`'s
+     * enclosing container, no matter how many nested sub-items or
+     * containers that single item is built from. The definite-length
+     * branch below walks nested items "flattened" (without recursion, to
+     * bound stack usage), so it must not run directly on `it`: every
+     * `_advance()` call on a nested sub-item would otherwise also
+     * decrement `it->remaining`, exhausting it long before the container
+     * `it` belongs to is actually empty. Do all bookkeeping on a detached,
+     * non-container cursor instead, and only apply a single, correctly
+     * guarded decrement to `it->remaining` once the whole item is skipped. */
+    nanocbor_value_t cursor = *it;
+    cursor.flags = 0;
+
     int res = NANOCBOR_OK;
     uint64_t skip = 1;
 
     while (skip > 0) {
-        int type = nanocbor_get_type(it);
+        int type = nanocbor_get_type(&cursor);
         if (type < 0) {
             return type;
         }
@@ -628,12 +641,12 @@ static int _skip_limited(nanocbor_value_t *it, uint8_t limit)
         /* map or array */
         if (type == NANOCBOR_TYPE_ARR || type == NANOCBOR_TYPE_MAP) {
             uint64_t len = 0;
-            res = _check_upcoming_container_length(it, &len, type);
+            res = _check_upcoming_container_length(&cursor, &len, type);
             if (res == NANOCBOR_ERR_INDEFINITE) {
                 /* cannot handle indefinite-length containers linearily,
                  * use stack (recursion) instead */
                 nanocbor_value_t recurse;
-                res = _enter_container(it, &recurse, type);
+                res = _enter_container(&cursor, &recurse, type);
                 if (res < 0) {
                     return res;
                 }
@@ -643,7 +656,7 @@ static int _skip_limited(nanocbor_value_t *it, uint8_t limit)
                         return res;
                     }
                 }
-                nanocbor_leave_container(it, &recurse);
+                nanocbor_leave_container(&cursor, &recurse);
                 skip--;
                 continue;
             }
@@ -651,7 +664,7 @@ static int _skip_limited(nanocbor_value_t *it, uint8_t limit)
                 /* propagate (other) errors up */
                 return res;
             }
-            _advance(it, res);
+            _advance(&cursor, res);
 
             if (type == NANOCBOR_TYPE_MAP) {
                 if (len > UINT64_MAX / 2) {
@@ -667,22 +680,26 @@ static int _skip_limited(nanocbor_value_t *it, uint8_t limit)
         }
         else if (type == NANOCBOR_TYPE_TAG) {
             uint64_t tmp = 0;
-            int res = _get_uint64(it, &tmp, NANOCBOR_SIZE_WORD, type);
+            int res = _get_uint64(&cursor, &tmp, NANOCBOR_SIZE_WORD, type);
             if (res < 0) {
                 return res;
             }
-            _advance(it, res);
+            _advance(&cursor, res);
             /* do not decrement skip as tag content still needs to be skipped, too */
             continue;
         }
 
-        res = _skip_simple(it);
+        res = _skip_simple(&cursor);
         if (res < 0) {
             return res;
         }
         skip--;
     }
 
+    it->cur = cursor.cur;
+    if (it->remaining) {
+        it->remaining--;
+    }
     return NANOCBOR_OK;
 }
 

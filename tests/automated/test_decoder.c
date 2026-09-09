@@ -336,6 +336,41 @@ static void test_issue_101(void)
     CU_ASSERT_EQUAL(res, NANOCBOR_ERR_END);
 }
 
+/* Skipping a definite-length nested array/map must consume exactly one
+ * element of the enclosing container's remaining count, regardless of how
+ * many primitives the nested structure itself contains. */
+static void test_skip_nested_container_remaining(void)
+{
+    /* array(4): 10, array(2): [1, 2], 20, 21 */
+    static const uint8_t input[]
+        = { 0x84, 0x0a, 0x82, 0x01, 0x02, 0x14, 0x15 };
+
+    nanocbor_value_t val;
+    nanocbor_value_t outer;
+    uint32_t tmp = 0;
+
+    nanocbor_decoder_init(&val, input, sizeof(input));
+    CU_ASSERT_EQUAL(nanocbor_enter_array(&val, &outer), NANOCBOR_OK);
+    CU_ASSERT_EQUAL(nanocbor_array_items_remaining(&outer), 4);
+
+    CU_ASSERT(nanocbor_get_uint32(&outer, &tmp) > 0);
+    CU_ASSERT_EQUAL(tmp, 10);
+    CU_ASSERT_EQUAL(nanocbor_array_items_remaining(&outer), 3);
+
+    /* skip the nested [1, 2] array as a single element */
+    CU_ASSERT_EQUAL(nanocbor_skip(&outer), NANOCBOR_OK);
+    CU_ASSERT_EQUAL(nanocbor_array_items_remaining(&outer), 2);
+    CU_ASSERT_EQUAL(nanocbor_at_end(&outer), false);
+
+    CU_ASSERT(nanocbor_get_uint32(&outer, &tmp) > 0);
+    CU_ASSERT_EQUAL(tmp, 20);
+
+    CU_ASSERT(nanocbor_get_uint32(&outer, &tmp) > 0);
+    CU_ASSERT_EQUAL(tmp, 21);
+
+    CU_ASSERT_EQUAL(nanocbor_at_end(&outer), true);
+}
+
 const test_t tests_decoder[] = {
     {
         .f = test_decode_none,
@@ -372,6 +407,10 @@ const test_t tests_decoder[] = {
     {
         .f = test_issue_101,
         .n = "Regression test for GitHub issue #101",
+    },
+    {
+        .f = test_skip_nested_container_remaining,
+        .n = "nanocbor_skip() must decrement enclosing remaining by 1 per nested container",
     },
     {
         .f = NULL,
