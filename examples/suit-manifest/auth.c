@@ -11,6 +11,7 @@
 #include "nanocbor/nanocbor.h"
 #include "suit_digest.h"
 #include "suit_iana.h"
+#include "suit_signature.h"
 
 static void _print_digest(const char *label, const uint8_t *digest,
                           size_t digest_len)
@@ -57,7 +58,9 @@ static suit_auth_result_t _sha256(const uint8_t *data, size_t data_len,
 static suit_auth_result_t _verify_digest(const uint8_t *authentication,
                                          size_t authentication_len,
                                          const uint8_t *manifest,
-                                         size_t manifest_len)
+                                         size_t manifest_len,
+                                         bool check_signature,
+                                         const char *signature_key_path)
 {
     nanocbor_value_t authentication_value;
     nanocbor_value_t authentication_array;
@@ -103,10 +106,22 @@ static suit_auth_result_t _verify_digest(const uint8_t *authentication,
             fprintf(stderr, "[suit-auth] malformed authentication block\n");
             return SUIT_AUTH_INVALID_INPUT;
         }
+        if (!check_signature) {
+            fprintf(stderr,
+                    "[suit-auth] skipping authentication block (%zu bytes), "
+                    "signature checking not requested\n",
+                    authentication_block_len);
+            continue;
+        }
         fprintf(stderr,
-                "[suit-auth] unsupported authentication block (%zu bytes)\n",
+                "[suit-auth] verifying authentication block (%zu bytes)\n",
                 authentication_block_len);
-        return SUIT_AUTH_UNSUPPORTED;
+        suit_auth_result_t signature_result = suit_signature_verify(
+            authentication_block, authentication_block_len,
+            digest_encoded, digest_encoded_len, signature_key_path);
+        if (signature_result != SUIT_AUTH_OK) {
+            return signature_result;
+        }
     }
 
     fprintf(stderr,
@@ -133,6 +148,8 @@ static suit_auth_result_t _verify_digest(const uint8_t *authentication,
 
 suit_auth_result_t suit_manifest_authenticate(const uint8_t *input,
                                               size_t input_len,
+                                              bool check_signature,
+                                              const char *signature_key_path,
                                               const uint8_t **verified_manifest,
                                               size_t *verified_manifest_len)
 {
@@ -211,7 +228,7 @@ suit_auth_result_t suit_manifest_authenticate(const uint8_t *input,
     /* digest covers the full bstr encoding of suit-manifest, header included */
     suit_auth_result_t result = _verify_digest(
         authentication, authentication_len, manifest_encoded,
-        manifest_encoded_len);
+        manifest_encoded_len, check_signature, signature_key_path);
     if (result == SUIT_AUTH_OK) {
         *verified_manifest = manifest;
         *verified_manifest_len = manifest_len;

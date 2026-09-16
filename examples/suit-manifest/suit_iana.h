@@ -50,10 +50,18 @@
 
 /* IANA COSE algorithm identifiers (RFC 9053) relevant to SUIT digests */
 #define SUIT_COSE_ALG_SHA_256 (-16)
+#define SUIT_COSE_ALG_ES256 (-7)
 
 #define SUIT_DIGEST_SHA256_BYTES 32U
 
 /* RFC4122_UUID = bstr .size 16 */
 #define SUIT_RFC4122_UUID_BYTES 16U
+
+/* COSE (RFC 9052) constants used to verify SUIT authentication blocks */
+#define SUIT_COSE_TAG_SIGN1 18U
+#define SUIT_COSE_HEADER_ALG 1
+
+/* ECDSA P-256 raw (r||s) signature length, as carried in COSE_Sign1 */
+#define SUIT_ECDSA_P256_SIGNATURE_BYTES 64U
 
 #endif

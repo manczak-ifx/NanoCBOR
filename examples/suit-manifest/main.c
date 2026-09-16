@@ -20,15 +20,19 @@ static const struct argp_option cmdline_options[] = {
     { "pretty", 'p', 0, OPTION_ARG_OPTIONAL,
       "Produce pretty printing with newlines and indents", 0 },
     { "input", 'f', "input", 0, "Input file, - for stdin", 0 },
+    { "check", 'c', "keyfile", 0,
+      "Verify the manifest signature using the given PEM public key file, "
+      "in addition to the mandatory digest check", 0 },
     { 0 },
 };
 
 struct arguments {
     bool pretty;
     char *input;
+    char *key;
 };
 
-static struct arguments _args = { false, NULL };
+static struct arguments _args = { false, NULL, NULL };
 
 static uint8_t buffer[CBOR_READ_BUFFER_BYTES];
 
@@ -41,6 +45,9 @@ static error_t _parse_opts(int key, char *arg, struct argp_state *state)
         break;
     case 'f':
         arguments->input = arg;
+        break;
+    case 'c':
+        arguments->key = arg;
         break;
     case ARGP_KEY_END:
         if (!arguments->input) {
@@ -80,8 +87,11 @@ int main(int argc, char *argv[])
 
     const uint8_t *manifest = NULL;
     size_t manifest_len = 0;
+    bool check_signature = (_args.key != NULL);
+    fprintf(stderr, "[suit-manifest] signature checking %s\n",
+            check_signature ? "enabled" : "disabled");
     suit_auth_result_t auth_result = suit_manifest_authenticate(
-        buffer, len, &manifest, &manifest_len);
+        buffer, len, check_signature, _args.key, &manifest, &manifest_len);
     if (auth_result != SUIT_AUTH_OK) {
         fprintf(stderr, "Manifest authentication failed (%d)\n", auth_result);
         return -1;
