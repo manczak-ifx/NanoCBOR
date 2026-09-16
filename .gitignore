@@ -15,3 +15,5 @@ docs
 # other
 outputs
 core.*
+.cache
+.vscode
